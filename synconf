@@ -1,0 +1,638 @@
+#!/bin/bash
+BASH_REALPATH=$(realpath "$0")
+ALL_ARGS="$@"
+LIST_OS="CentOS, Debian"
+INSTALL_DIR="/root/synconf_install"
+WATCHMAN_VERSION_DEFAULT="v2021.11.29.00"
+SYNCONF_DIR="/usr/local/synconf"
+BIN_DIR="${SYNCONF_DIR}/bin"
+CONFIG_DIR="${SYNCONF_DIR}/conf"
+WATCH_FILE="${CONFIG_DIR}/watch.conf"
+CLUSTER_FILE="${CONFIG_DIR}/cluster.conf"
+LOG_FILE="${SYNCONF_DIR}/log/synconf.log"
+BASH_DEFAULT="${CONFIG_DIR}/sync.bash"
+GET_FILE_OK="0"
+INSTALL_WATCHMAN="y"
+GITHUB_LINK="https://raw.githubusercontent.com/mbrother2/synconf/main"
+
+# Set colors
+NOCOLOR='\e[0m'
+RED='\e[38;5;124m'
+YELLOW='\e[38;5;11m'
+GREEN='\e[38;5;28m'
+WHITE='\e[38;5;7m'
+
+# Print log
+_print_log() {
+  if [ "${SUM_ARG}" == "${OPTIND}" ]; then
+    printf "$1${OPTARG}${NOCOLOR}""\n" | tee -a ${LOG_FILE}
+  else
+   printf "$1${OPTARG}${NOCOLOR}" | tee -a ${LOG_FILE}
+  fi
+}
+
+# Show log
+_show_log() {
+  OPTIND=1
+  SUM_ARG=$(($# + 1))
+  while getopts 'r:g:y:w:d' OPTION; do
+    case ${OPTION} in
+    d) _print_log "$(date "+[ %d/%m/%Y %H:%M:%S ]")" ;;
+    r) _print_log "${RED}" ;;
+    g) _print_log "${GREEN}" ;;
+    y) _print_log "${YELLOW}" ;;
+    w) _print_log "${WHITE}" ;;
+    *) _print_log "" ;;
+    esac
+  done
+}
+
+_exit(){
+  _show_log -d -r " [ERROR]" -w " $2"
+  exit "$1"
+}
+
+_install_package(){
+  command -v "$1" >/dev/null || ${INSTALL_CM} -y install "$1"
+}
+
+_create_default_conf() {
+  mkdir -p ${SYNCONF_DIR}/{conf,log}
+
+  if [[ ! -f "${CLUSTER_FILE}" ]] || [[ ! -s "${CLUSTER_FILE}" ]]; then
+    echo '{"cluster":[]}' >${CLUSTER_FILE}
+  fi
+
+  if [[ ! -f "${WATCH_FILE}" ]] || [[ ! -s "${WATCH_FILE}" ]]; then
+    cat >${WATCH_FILE} <<EOF
+      {
+        "watch": [{
+          "dir":"${CONFIG_DIR}",
+          "run_bash":"${BASH_DEFAULT}",
+          "track_file":[
+            "watch.conf"
+          ],
+          "exclude_file":[],
+          "command":[],
+          "delete_file":"no"
+        },{
+          "dir":"${BIN_DIR}",
+          "run_bash":"${BASH_DEFAULT}",
+          "track_file":[
+            "synconf",
+            "sync.bash"
+          ],
+          "exclude_file":[],
+          "command":[],
+          "delete_file":"no"
+        }]
+      }
+EOF
+  fi
+}
+
+_create_watch(){
+  echo ""
+  _show_log -d -g " [INFO]" -w " Create watch $1"
+  sleep 1
+
+  ${BIN_DIR}/watchman watch-del "$1" >/dev/null
+  ${BIN_DIR}/watchman watch "$1"
+  ${BIN_DIR}/watchman -- trigger "$1" watchman -X -p '\.swp$' -X -p '\.swx$' -- "${BASH_FILE}" "$1"
+}
+
+_check_os(){
+  if [ -f /etc/redhat-release ]; then
+    INSTALL_CM="yum"
+    if [ ! -f "/etc/yum.repos.d/epel.repo" ]; then
+      _show_log -d -g " [INFO]" -w " Install required repo (epel-release)"
+      yum -y install epel-release
+    fi
+  elif [ -f /etc/apt/sources.list ]; then
+    INSTALL_CM="apt-get"
+  else
+    _exit 3 "Do not support your OS. Only support ${LIST_OS}"
+  fi
+}
+
+_get_input() {
+  if [[ "${COMMAND}" != "install" ]] && [[ ! -f "${BIN_DIR}/watchman" ]]; then
+    _exit 4 "watchman is not installed, exit."
+  fi
+
+  for i in curl jq unzip rsync; do
+    _install_package "$i"
+  done
+
+  if [ -z "${WATCHMAN_VERSION}" ]; then
+    WATCHMAN_VERSION="${WATCHMAN_VERSION_DEFAULT}"
+    SYNCONF_FILE="watchman-${WATCHMAN_VERSION_DEFAULT}-linux.zip"
+  else
+    SYNCONF_FILE="watchman-${WATCHMAN_VERSION}-linux.zip"
+  fi
+
+  CHECK_CONFIG=$(jq -r '.watch[].delete_file' ${WATCH_FILE} 2>/dev/null | head -1)
+  List_DELETE_OPTION=("yes" "no")
+  if [[ ! " ${List_DELETE_OPTION[*]} " =~ " ${CHECK_CONFIG} " ]]; then
+    TIME_NOW=$(date +"%d-%m-%Y_%T")
+    _show_log -d -y " [WARNING]" -w " Can not read file ${WATCH_FILE}!"
+    _show_log -d -g " [INFO]" -w " Backup old config file to ${WATCH_FILE}_${TIME_NOW}"
+    mv ${WATCH_FILE} "${WATCH_FILE}_${TIME_NOW}"
+
+    _create_default_conf
+  fi
+
+  if [ -n "${DIR_NAME}" ]; then
+    DIR_NAME=$(realpath "${DIR_NAME}")
+    LIST_TRACK=$(_watch_list "track_file")
+    LIST_EXCLUDE=$(_watch_list "exclude_file")
+    LIST_COMMAND=$(_watch_list "command")
+  fi
+
+  if [ -z "${BASH_FILE}" ]; then
+    BASH_FILE="${BASH_DEFAULT}"
+  fi
+
+  LIST_WATCH=$(${BIN_DIR}/watchman watch-list 2>/dev/null | jq -r '.roots[]')
+  LIST_SERVER=$(jq -r '.cluster[].ip' ${CLUSTER_FILE})
+  SUM_SERVER=$(echo "${LIST_SERVER}" | wc -l)
+}
+
+_install() {
+  if [ -f "${BIN_DIR}/watchman" ]; then
+    _show_log -d -y " [WARNING]" -w " File ${BIN_DIR}/watchman exist!"
+    read -rp "Do you want to reinstall(y/n)? " INSTALL_WATCHMAN
+  fi
+
+  if [[ "${INSTALL_WATCHMAN}" == "y" ]] || [[ "${INSTALL_WATCHMAN}" == "Y" ]]; then
+    echo ""
+    systemctl stop watchman >/dev/null 2>&1
+    _show_log -d -g " [INFO]" -w " Download watchman from Github"
+    curl -L -o "${BIN_DIR}/watchman_sync.bash" "${GITHUB_LINK}/watchman_sync.bash"
+
+    if [[ "${INSTALL_CM}" == "yum" ]]; then
+      curl -L -o "${BIN_DIR}/watchman" "${GITHUB_LINK}/watchman/watchman-CentOS"
+    else
+      mkdir ${INSTALL_DIR}
+      cd ${INSTALL_DIR} || _exit 3 "Can not create directory ${INSTALL_DIR}! Exit"
+
+      sleep 1
+      curl -L -o "${SYNCONF_FILE}" "${GITHUB_LINK}/watchman/${SYNCONF_FILE}"
+
+      if [ ! -f "${SYNCONF_FILE}" ]; then
+        _show_log -d -y " [WARNING]" -w " Can not download file ${SYNCONF_FILE}"
+        _show_log -d -g " [INFO]" -w " Install default version: ${WATCHMAN_VERSION_DEFAULT}"
+        echo ""
+        echo "Install after 3 seconds, press Ctrl + C to cancel"
+        for i in 3 2 1; do
+          echo -n $i..
+          sleep 1
+        done
+        SYNCONF_FILE="watchman-${WATCHMAN_VERSION_DEFAULT}-linux.zip"
+        curl -L -o "${SYNCONF_FILE}" "${GITHUB_LINK}/watchman/${SYNCONF_FILE}"
+      fi
+
+      unzip "${SYNCONF_FILE}"
+
+      echo ""
+      _show_log -d -g " [INFO]" -w " Config watchman"
+      sleep 1
+      cd "watchman-${WATCHMAN_VERSION}-linux" || _exit 4 "Can not change dir to watchman-${WATCHMAN_VERSION}-linux"
+      mv bin/* ${BIN_DIR}/
+      mv lib/* /usr/local/lib/
+
+      # Remove install dir
+      cd /root || _exit 4 "Can not change dir to /root"
+      rm -rf ${INSTALL_DIR}
+    fi
+
+    cp "${BASH_REALPATH}" ${BIN_DIR}/ 2>/dev/null
+    chmod 755 "${BIN_DIR}/watchman" "${BIN_DIR}/watchman_bash.bash" "${BIN_DIR}/watchman_sync.bash"
+  fi
+
+  mkdir -p /usr/local/var/run/watchman
+  chmod 2777 /usr/local/var/run/watchman
+  ${BIN_DIR}/watchman -v >/dev/null || _exit 4 "Can not detect watchman version! Exit"
+
+  rm -f /usr/local/sbin/{watchman_bash.bash,watchman}
+  ln -s ${BIN_DIR}/watchman_bash.bash /usr/local/sbin/watchman_bash.bash
+  ln -s ${BIN_DIR}/watchman /usr/local/sbin/watchman
+
+  echo ""
+  _show_log -d -g " [INFO]" -w " Create watchman service"
+  sleep 1
+
+  cat >"/lib/systemd/system/watchman.service" <<EOF
+Description=Watchman watching file change
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=${BIN_DIR}/watchman watch-list -f
+ExecStop=${BIN_DIR}/watchman shutdown-server
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  rm -rf /usr/local/var/run/watchman/root-state
+  systemctl daemon-reload
+  systemctl restart watchman
+  systemctl enable watchman
+
+  _create_watch "${CONFIG_DIR}"
+  _create_watch "${BIN_DIR}"
+
+  echo ""
+  for i in $(jq -r '.watch[].run_bash' ${WATCH_FILE} | sort | uniq); do
+    if [ ! -f "$i" ]; then
+      _show_log -d -y " [WARNING]" -w " File $i does not exist. REMEMBER to create it"
+    fi
+  done
+  _show_log -d -g " [INFO]" -w " Install watchman successfully"
+}
+
+_uninstall() {
+  ${BIN_DIR}/watchman watch-del-all >/dev/null
+  systemctl stop watchman
+  rm -rf ${SYNCONF_DIR}
+  rm -f /lib/systemd/system/watchman.service /usr/local/sbin/{watchman_bash.bash,watchman}
+  systemctl daemon-reload
+  for i in $(pgrep "watchman"); do
+    kill -9 "$i"
+  done
+}
+
+_watch_list() {
+  jq -r ".watch[] | select(.dir == \"${DIR_NAME}\") | .$1[]" ${WATCH_FILE} | sort | uniq
+}
+
+_watch_add() {
+  NEW_WATCH=$(jq "(.watch[] | select(.dir == \"${DIR_NAME}\").$1) += [\"$2\"]" ${WATCH_FILE})
+  NEW_WATCH=$(jq "del(.watch[] | select(.dir == \"${DIR_NAME}\") .exclude_file[])" "${NEW_WATCH}")
+  echo "${NEW_WATCH}" >${WATCH_FILE}
+}
+
+_watch_del() {
+  if [ -z "$1" ]; then
+    NEW_WATCH=$(jq "del(.watch[] | select(.dir == \"${DIR_NAME}\"))" ${WATCH_FILE})
+  else
+    NEW_WATCH=$(jq "del(.watch[] | select(.dir == \"${DIR_NAME}\") .$1[] | select(. == \"$2\"))" ${WATCH_FILE})
+  fi
+
+  echo "${NEW_WATCH}" >${WATCH_FILE}
+}
+
+_watch_apply() {
+  if [ -n "$2" ]; then
+    for SINGLE in $(echo "$2" | sed 's/,/\n/g' | sed "s/^[ \t]*//"); do
+      if [ "${REMOVE}" == "yes" ]; then
+        _watch_del "$1" "${SINGLE}"
+        continue
+      fi
+
+      CHECK_TRACK=$(echo "$3" | grep -c "^${SINGLE}$")
+      if [ "${CHECK_TRACK}" == 0 ]; then
+        _watch_add "$1" "${SINGLE}"
+      fi
+    done
+  fi
+}
+
+_watch() {
+  if [ -z "${DIR_NAME}" ]; then
+    jq -r '.watch' ${WATCH_FILE} | jq
+    exit 0
+  fi
+
+  if [[ "${REMOVE}" == "yes" ]] && [[ -z "${TRACK}${EXCLUDE}${RUN_COMMAND}" ]] ; then
+    ${BIN_DIR}/watchman watch-del "${DIR_NAME}" >/dev/null
+    _watch_del ""
+  else
+    if [ ! -d "${DIR_NAME}" ]; then
+      _exit 4 "Directory ${DIR_NAME} does not exist. Can not tracking it. Exit!"
+    fi
+
+    CHECK_WATCH_DIR=$(echo "${LIST_WATCH}" | grep -c "^${DIR_NAME}$")
+
+    if [ "${CHECK_WATCH_DIR}" == 0 ]; then
+      ${BIN_DIR}/watchman watch "${DIR_NAME}" >/dev/null
+      ${BIN_DIR}/watchman -- trigger "${DIR_NAME}" watchman \
+        -X -p '\.swp$' -X -p '\.swx$' -- "${BASH_FILE}" "${DIR_NAME}" >/dev/null
+    fi
+
+    if [ ! -f "${DIR_NAME}/.watchmanconfig" ]; then
+      echo "{\"settle\": 1000}" >"${DIR_NAME}"/.watchmanconfig
+      systemctl restart watchman
+    fi
+
+    CHECK_WATCH_DIR_CONF=$(jq -r ".watch[] | select(.dir == \"${DIR_NAME}\")" ${WATCH_FILE})
+    if [ -z "${CHECK_WATCH_DIR_CONF}" ]; then
+      NEW_WATCH=$(jq ".watch += [{
+        \"dir\":\"${DIR_NAME}\",
+        \"run_bash\":\"${BASH_FILE}\",
+        \"track_file\":[],
+        \"exclude_file\":[],
+        \"command\":[],
+        \"delete_file\":\"no\"
+        }]" ${WATCH_FILE}
+      )
+      echo "${NEW_WATCH}" >${WATCH_FILE}
+    fi
+
+    IFS=$'\n'
+    _watch_apply "track_file" "${TRACK}" "${LIST_TRACK}"
+    _watch_apply "exclude_file" "${EXCLUDE}" "${LIST_EXCLUDE}"
+    _watch_apply "command" "${RUN_COMMAND}" "${LIST_COMMAND}"
+  fi
+
+  if [[ "${NO_CONFIG}" != "yes" ]] && [[ -n "${LIST_SERVER}" ]]; then
+    _show_log -d -g " [INFO]" -w " Syncing config to cluster..."
+
+    if [ -z "${RUN_COMMAND}" ]; then
+      ALL_ARGS="${ALL_ARGS} -x"
+    else
+      RUN_COMMAND_SED=$(echo "${RUN_COMMAND}" | sed 's/\//\\\//g')
+      ALL_ARGS=$(echo ${ALL_ARGS} | sed "s/${RUN_COMMAND_SED}/\\\"${RUN_COMMAND_SED}\\\" -x/")
+    fi
+
+    for SINGLE_SERVER in ${LIST_SERVER}; do
+      SSH_PORT=$(jq -r ".cluster[] | select(.ip == \"${SINGLE_SERVER}\") | .port" ${CLUSTER_FILE})
+      ssh -o ConnectTimeout=1 -p "${SSH_PORT}" -q root@"${SINGLE_SERVER}" exit || {
+        _show_log -d -r " [ERROR]" -w " Can not connect IP ${SINGLE_SERVER} through port ${SSH_PORT}. Skip"
+        continue
+      }
+
+      _show_log -d -g " [INFO]" -w " Syncing config to ${SINGLE_SERVER}"
+      MD5SUM=$(md5sum ${WATCH_FILE} | awk '{print $1}')
+      MD5SUM_REMOTE=$(ssh root@"${SINGLE_SERVER}" -p "${SSH_PORT}" "md5sum ${WATCH_FILE} 2>/dev/null | cut -d' ' -f1")
+
+      if ssh root@"${SINGLE_SERVER}" -p "${SSH_PORT}" "[ ! -d ${CONFIG_DIR} ]"; then
+        ssh root@"${SINGLE_SERVER}" -p "${SSH_PORT}" "mkdir -p ${CONFIG_DIR}"
+      fi
+
+      i=0
+      while [[ "${MD5SUM}" != "${MD5SUM_REMOTE}" ]] && [[ $i -lt 5 ]]; do
+        _show_log -d -g " [INFO]" -w " Waiting for sync ${WATCH_FILE}..."
+        sleep 1
+        MD5SUM_REMOTE=$(ssh root@"${SINGLE_SERVER}" -p "${SSH_PORT}" "md5sum ${WATCH_FILE} 2>/dev/null | cut -d' ' -f1")
+        i=$((i+1))
+      done
+
+      if [[ "$i" == 5 ]] && [[ "${MD5SUM}" != "${MD5SUM_REMOTE}" ]]; then
+        _show_log -d -r " [ERROR]" -w " Can not sync file ${WATCH_FILE} after 5 retries. Skip ${SINGLE_SERVER}"
+        continue
+      fi
+
+      ssh root@"${SINGLE_SERVER}" -p "${SSH_PORT}" "${BIN_DIR}/watchman_bash.bash ${ALL_ARGS}" >/dev/null
+      _show_log -d -g " [INFO]" -w " Sync config to ${SINGLE_SERVER} successfully"
+    done
+  fi
+}
+
+_cluster() {
+  if [ -z "${SERVER}" ]; then
+    if [ "${GET_FILE}" == "yes" ]; then
+      _exit 22 "Require -s option to get file. Exit"
+    fi
+
+    i=1
+    DATA_JSON=()
+    for SINGLE_SERVER in ${LIST_SERVER}; do
+      COMMA=","
+      if [ "$i" == "${SUM_SERVER}" ]; then
+        COMMA=""
+      fi
+
+      SSH_PORT=$(jq -r ".cluster[] | select(.ip == \"${SINGLE_SERVER}\") | .port" ${CLUSTER_FILE})
+      ssh -o ConnectTimeout=1 -p "${SSH_PORT}" -q root@"${SINGLE_SERVER}" exit \
+        && SINGLE_SERVER_STATUS="OK" || SINGLE_SERVER_STATUS="Fail"
+
+      SINGLE_RESULT=$(cat <<EOF
+        {
+          "ip": "${SINGLE_SERVER}",
+          "ssh_port": "${SSH_PORT}",
+          "status": "${SINGLE_SERVER_STATUS}"
+        }${COMMA}
+EOF
+      )
+      i=$((i + 1))
+      DATA_JSON+=("${SINGLE_RESULT}")
+    done
+
+    echo "[${DATA_JSON[*]}]" | jq
+  else
+    IFS=$'\n'
+    for SINGLE_SERVER in $(echo -e "${SERVER//,/\\n}"); do
+      IP_ADDRESS=$(echo "${SINGLE_SERVER}" | cut -d':' -f1)
+      SSH_PORT=$(echo "${SINGLE_SERVER}" | cut -d':' -f2)
+
+      if [ "${SSH_PORT}" == "${IP_ADDRESS}" ]; then
+        SSH_PORT="22"
+      fi
+
+      if [ "${REMOVE}" == "yes" ]; then
+        NEW_WATCH=$(jq "del(.cluster[] | select(.ip == \"${IP_ADDRESS}\"))" ${CLUSTER_FILE})
+        echo "${NEW_WATCH}" >${CLUSTER_FILE}
+        _show_log -d -g " [INFO]" -w " ${IP_ADDRESS} has been removed from cluster"
+      else
+        ssh -o ConnectTimeout=1 -p ${SSH_PORT} -q root@"${IP_ADDRESS}" exit || {
+          _exit 3 "Can not connect IP ${SINGLE_SERVER} through port ${SSH_PORT}"
+        }
+
+        CHECK_EXCLUDE=$(echo "${LIST_SERVER}" | grep -c "^${IP_ADDRESS}$")
+        if [ "${CHECK_EXCLUDE}" == 0 ]; then
+          NEW_WATCH=$(jq ".cluster += [{\"ip\":\"${IP_ADDRESS}\",\"port\":\"${SSH_PORT}\"}]" ${CLUSTER_FILE})
+          echo "${NEW_WATCH}" >${CLUSTER_FILE}
+          _show_log -d -g " [INFO]" -w " ${IP_ADDRESS} has been added to cluster"
+        else
+          _show_log -d -g " [INFO]" -w " ${IP_ADDRESS} has been existed on cluster"
+        fi
+
+        if [[ "${GET_FILE}" == "yes" ]] && [[ ${GET_FILE_OK} == "0" ]]; then
+          _show_log -d -g " [INFO]" -w " Sync data from ${IP_ADDRESS}"
+          rsync -az -e "ssh -p ${SSH_PORT}" --exclude="cluster.conf" "${IP_ADDRESS}":${CONFIG_DIR}/ ${CONFIG_DIR}
+
+          _show_log -d -g " [INFO]" -w " Create watching base on cluster"
+          for i in $(
+            ssh root@"${IP_ADDRESS}" -p ${SSH_PORT} \
+            "${BIN_DIR}/watchman watch-list" | jq -r '.roots[]' | grep -v "^${CONFIG_DIR}$"
+          ); do
+            mkdir -p "$i"
+            echo "{\"settle\": 1000}" >"$i"/.watchmanconfig
+            ${BASH_DEFAULT} "$i" --get-file
+            ${BIN_DIR}/watchman watch "$i"
+            ${BIN_DIR}/watchman -- trigger "$i" watchman -X -p '\.swp$' -X -p '\.swx$' -- "${BASH_FILE}" "$i"
+          done
+
+          systemctl restart watchman
+          GET_FILE_OK="1"
+        fi
+      fi
+    done
+  fi
+}
+
+# Show help
+_show_help() {
+  cat <<EOF
+USAGE:
+   bash $0 command [options]
+
+COMMANDS:
+     install    Install watchman
+     cluster    Add/remove server to cluster
+     watch      Add/remove watch directory
+     uninstall  Remove watchman
+     help, h    Show help
+
+OPTIONS:
+    For install:
+     -v, --version [STRING]       Version of watchman will be installed. Default: ${WATCHMAN_VERSION_DEFAULT}    
+
+    For watch:
+     -b, --bash [FILE_NAME]       Bash file run when trigger change. Default: ${BASH_DEFAULT}
+     -c, --command [COMMAND]      List command run on remote server after sync, separate by comma. Example:
+                                  "/usr/sbin/pmta reload"
+                                  "/usr/sbin/pmta reload,systemctl restart nginx"
+     -d, --dir [STRING]           Directory want to watch. Without -e or -t option, we will track all files in this
+                                  directory. Example:
+                                  /etc/nginx/conf.d
+     -e, --exclude [FILE_NAME]    Tracking ALL files but exclude these files, separate by comma. Example:
+                                  thanhlv.com.conf
+                                  thanhlv.com.conf,thanhlv.net.conf
+     -r, --remove                 Remove config. Without -e or -t or -c option, we will remove tracking this directory
+     -t, --track [FILE_NAME]      ONLY tracking these files, separate by comma. Example:
+                                  thanhlv.com.conf
+                                  thanhlv.com.conf,thanhlv.net.conf
+
+    For cluster:
+     -g, --get-file               Get config file from old server
+     -r, --remove                 Remove server from cluster
+     -s, --server [IP:PORT]       Add servers to cluster, separate by comma. Example:
+                                  1.1.1.1:2083
+                                  1.1.1.1:2083,8.8.8.8:2087
+     -x, --exit                   Do not config on other servers in cluster
+
+    Show help:
+     -h, --help                   Show help
+
+EXAMPLES:
+   bash $0 install
+   bash $0 install -v v2021.12.13.00
+   bash $0 watch --dir /etc/nginx/conf.d --track thanhlv.com.conf
+   bash $0 watch -d /etc/nginx/conf.d -t thanhlv.com.conf -b /usr/local/sbin/run_sync.bash
+   bash $0 watch --dir /etc/nginx/conf.d --exclude thanhlv.com.conf,thanhlv.net.conf
+   bash $0 cluster -s 1.1.1.1:2083,8.8.8.8:2087
+   bash $0 cluster
+   bash $0 uninstall
+EOF
+}
+
+# Main function
+_create_default_conf
+printf "$(date "+[ %d/%m/%Y %H:%M:%S ]") ${GREEN}[INFO]${NOCOLOR} Run command: $0 ${ALL_ARGS}\n" >> ${LOG_FILE}
+if [ -z "$1" ]; then
+  _show_help
+  exit 0
+else
+  case $1 in
+  h | help | -h | --help)
+    _show_help
+    exit 0
+    ;;
+  install | cluster | watch | uninstall)
+    COMMAND=$1
+    ;;
+  *)
+    _exit 22 "Do not support command $1!"
+    ;;
+  esac
+fi
+
+shift
+while (("$#")); do
+  case $1 in
+  -b | --bash)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      BASH_FILE="$2"
+      shift 2
+    fi
+    ;;
+  -c | --command)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      RUN_COMMAND="$2"
+      shift 2
+    fi
+    ;;
+  -d | --dir)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      DIR_NAME="$2"
+      shift 2
+    fi
+    ;;
+  -e | --exclude)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      EXCLUDE="$2"
+      shift 2
+    fi
+    ;;
+  -g | --get-file)
+    GET_FILE="yes"
+    shift
+    ;;
+  -r | --remove)
+    REMOVE="yes"
+    shift
+    ;;
+  -s | --server)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      SERVER="$2"
+      shift 2
+    fi
+    ;;
+  -t | --track)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      TRACK="$2"
+      shift 2
+    fi
+    ;;
+  -v | --version)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1!"
+    else
+      WATCHMAN_VERSION="$2"
+      shift 2
+    fi
+    ;;
+  -x | --exit)
+    NO_CONFIG="yes"
+    shift
+    ;;
+  *)
+    _exit 22 "Do not support option $1!"
+    ;;
+  esac
+done
+
+_check_os
+_get_input
+case ${COMMAND} in
+install) _install ;;
+watch) _watch ;;
+cluster) _cluster ;;
+uninstall) _uninstall ;;
+esac
