@@ -135,7 +135,7 @@ _get_input() {
   List_DELETE_OPTION=("yes" "no")
   if [[ ! " ${List_DELETE_OPTION[*]} " =~ " ${CHECK_CONFIG} " ]]; then
     TIME_NOW=$(date +"%d-%m-%Y_%T")
-    _show_log -d -y " [WARNING]" -w " Can not read file ${WATCH_FILE}!"
+    _show_log -d -y " [WARNING]" -w " Cannot read file ${WATCH_FILE}."
     _show_log -d -g " [INFO]" -w " Backup old config file to ${WATCH_FILE}_${TIME_NOW}"
     mv ${WATCH_FILE} "${WATCH_FILE}_${TIME_NOW}"
 
@@ -160,7 +160,7 @@ _get_input() {
 
 _install() {
   if [ -f "${BIN_DIR}/watchman" ]; then
-    _show_log -d -y " [WARNING]" -w " File ${BIN_DIR}/watchman exist!"
+    _show_log -d -y " [WARNING]" -w " File ${BIN_DIR}/watchman exist."
     read -rp "Do you want to reinstall(y/n)? " INSTALL_WATCHMAN
   fi
 
@@ -168,19 +168,19 @@ _install() {
     echo ""
     systemctl stop watchman >/dev/null 2>&1
     _show_log -d -g " [INFO]" -w " Download watchman from Github"
-    curl -L -o "${BIN_DIR}/watchman_sync.bash" "${GITHUB_LINK}/watchman_sync.bash"
+    curl -L -o "${BIN_DIR}/sync.bash" "${GITHUB_LINK}/sync.bash"
 
     if [[ "${INSTALL_CM}" == "yum" ]]; then
       curl -L -o "${BIN_DIR}/watchman" "${GITHUB_LINK}/watchman/watchman-CentOS"
     else
       mkdir ${INSTALL_DIR}
-      cd ${INSTALL_DIR} || _exit 3 "Can not create directory ${INSTALL_DIR}! Exit"
+      cd ${INSTALL_DIR} || _exit 3 "Cannot create directory ${INSTALL_DIR}. Exit"
 
       sleep 1
       curl -L -o "${SYNCONF_FILE}" "${GITHUB_LINK}/watchman/${SYNCONF_FILE}"
 
       if [ ! -f "${SYNCONF_FILE}" ]; then
-        _show_log -d -y " [WARNING]" -w " Can not download file ${SYNCONF_FILE}"
+        _show_log -d -y " [WARNING]" -w " Cannot download file ${SYNCONF_FILE}"
         _show_log -d -g " [INFO]" -w " Install default version: ${WATCHMAN_VERSION_DEFAULT}"
         echo ""
         echo "Install after 3 seconds, press Ctrl + C to cancel"
@@ -192,17 +192,17 @@ _install() {
         curl -L -o "${SYNCONF_FILE}" "${GITHUB_LINK}/watchman/${SYNCONF_FILE}"
       fi
 
-      unzip "${SYNCONF_FILE}"
+      unzip "${SYNCONF_FILE}" || _exit 3 "Cannot extract file ${SYNCONF_FILE}. Exit"
 
       echo ""
       _show_log -d -g " [INFO]" -w " Config watchman"
       sleep 1
-      cd "watchman-${WATCHMAN_VERSION}-linux" || _exit 4 "Can not change dir to watchman-${WATCHMAN_VERSION}-linux"
+      cd "watchman-${WATCHMAN_VERSION}-linux" || _exit 4 "Cannot change dir to watchman-${WATCHMAN_VERSION}-linux. Exit"
       mv bin/* ${BIN_DIR}/
       mv lib/* /usr/local/lib/
 
       # Remove install dir
-      cd /root || _exit 4 "Can not change dir to /root"
+      cd /root || _exit 4 "Cannot change dir to /root"
       rm -rf ${INSTALL_DIR}
     fi
 
@@ -212,7 +212,7 @@ _install() {
 
   mkdir -p /usr/local/var/run/watchman
   chmod 2777 /usr/local/var/run/watchman
-  ${BIN_DIR}/watchman -v >/dev/null || _exit 4 "Can not detect watchman version! Exit"
+  ${BIN_DIR}/watchman -v >/dev/null || _exit 4 "Cannot detect watchman version. Exit"
 
   rm -f /usr/local/sbin/{synconf,watchman}
   ln -s ${BIN_DIR}/synconf /usr/local/sbin/synconf
@@ -311,7 +311,7 @@ _watch() {
     _watch_del ""
   else
     if [ ! -d "${DIR_NAME}" ]; then
-      _exit 4 "Directory ${DIR_NAME} does not exist. Can not tracking it. Exit!"
+      _exit 4 "Directory ${DIR_NAME} does not exist. Cannot tracking it. Exit"
     fi
 
     CHECK_WATCH_DIR=$(echo "${LIST_WATCH}" | grep -c "^${DIR_NAME}$")
@@ -360,7 +360,7 @@ _watch() {
     for SINGLE_SERVER in ${LIST_SERVER}; do
       SSH_PORT=$(jq -r ".cluster[] | select(.ip == \"${SINGLE_SERVER}\") | .port" ${CLUSTER_FILE})
       ssh -o ConnectTimeout=1 -p "${SSH_PORT}" -q root@"${SINGLE_SERVER}" exit || {
-        _show_log -d -r " [ERROR]" -w " Can not connect IP ${SINGLE_SERVER} through port ${SSH_PORT}. Skip"
+        _show_log -d -r " [ERROR]" -w " Cannot connect IP ${SINGLE_SERVER} through port ${SSH_PORT}. Skip"
         continue
       }
 
@@ -381,7 +381,7 @@ _watch() {
       done
 
       if [[ "$i" == 5 ]] && [[ "${MD5SUM}" != "${MD5SUM_REMOTE}" ]]; then
-        _show_log -d -r " [ERROR]" -w " Can not sync file ${WATCH_FILE} after 5 retries. Skip ${SINGLE_SERVER}"
+        _show_log -d -r " [ERROR]" -w " Cannot sync file ${WATCH_FILE} after 5 retries. Skip ${SINGLE_SERVER}"
         continue
       fi
 
@@ -438,7 +438,7 @@ EOF
         _show_log -d -g " [INFO]" -w " ${IP_ADDRESS} has been removed from cluster"
       else
         ssh -o ConnectTimeout=1 -p ${SSH_PORT} -q root@"${IP_ADDRESS}" exit || {
-          _exit 3 "Can not connect IP ${SINGLE_SERVER} through port ${SSH_PORT}"
+          _exit 3 "Cannot connect IP ${SINGLE_SERVER} through port ${SSH_PORT}"
         }
 
         CHECK_EXCLUDE=$(echo "${LIST_SERVER}" | grep -c "^${IP_ADDRESS}$")
@@ -546,7 +546,7 @@ else
     COMMAND=$1
     ;;
   *)
-    _exit 22 "Do not support command $1!"
+    _exit 22 "Do not support command $1. Exit"
     ;;
   esac
 fi
@@ -556,7 +556,7 @@ while (("$#")); do
   case $1 in
   -b | --bash)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       BASH_FILE="$2"
       shift 2
@@ -564,7 +564,7 @@ while (("$#")); do
     ;;
   -c | --command)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       RUN_COMMAND="$2"
       shift 2
@@ -572,7 +572,7 @@ while (("$#")); do
     ;;
   -d | --dir)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       DIR_NAME="$2"
       shift 2
@@ -580,7 +580,7 @@ while (("$#")); do
     ;;
   -e | --exclude)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       EXCLUDE="$2"
       shift 2
@@ -596,7 +596,7 @@ while (("$#")); do
     ;;
   -s | --server)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       SERVER="$2"
       shift 2
@@ -604,7 +604,7 @@ while (("$#")); do
     ;;
   -t | --track)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       TRACK="$2"
       shift 2
@@ -612,7 +612,7 @@ while (("$#")); do
     ;;
   -v | --version)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1!"
+      _exit 22 "Missing argument for option $1. Exit"
     else
       WATCHMAN_VERSION="$2"
       shift 2
@@ -623,7 +623,7 @@ while (("$#")); do
     shift
     ;;
   *)
-    _exit 22 "Do not support option $1!"
+    _exit 22 "Do not support option $1. Exit"
     ;;
   esac
 done

@@ -289,11 +289,7 @@ if [ "${GET_FILE}" == "--get-file" ]; then
 else
   # Read output from watchman
   while read LINE; do
-    {
-      echo "---"
-      date +"%d-%m-%Y %T"
-      echo "${LINE}"
-    } >>${DEBUG_FILE}
+    echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"data\":${LINE}}" | jq -c >>${DEBUG_FILE}
     LIST_FILE=$(echo "${LINE}" | jq -r '.[].name')
   done
 
