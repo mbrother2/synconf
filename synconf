@@ -10,7 +10,7 @@ CONFIG_DIR="${SYNCONF_DIR}/conf"
 WATCH_FILE="${CONFIG_DIR}/watch.conf"
 CLUSTER_FILE="${CONFIG_DIR}/cluster.conf"
 LOG_FILE="${SYNCONF_DIR}/log/synconf.log"
-BASH_DEFAULT="${CONFIG_DIR}/sync.bash"
+BASH_DEFAULT="${BIN_DIR}/sync.bash"
 GET_FILE_OK="0"
 INSTALL_WATCHMAN="y"
 GITHUB_LINK="https://raw.githubusercontent.com/mbrother2/synconf/main"
@@ -57,7 +57,7 @@ _install_package(){
 }
 
 _create_default_conf() {
-  mkdir -p ${SYNCONF_DIR}/{conf,log}
+  mkdir -p ${SYNCONF_DIR}/{conf,log,bin}
 
   if [[ ! -f "${CLUSTER_FILE}" ]] || [[ ! -s "${CLUSTER_FILE}" ]]; then
     echo '{"cluster":[]}' >${CLUSTER_FILE}
@@ -207,15 +207,15 @@ _install() {
     fi
 
     cp "${BASH_REALPATH}" ${BIN_DIR}/ 2>/dev/null
-    chmod 755 "${BIN_DIR}/watchman" "${BIN_DIR}/watchman_bash.bash" "${BIN_DIR}/watchman_sync.bash"
+    chmod 755 "${BIN_DIR}/watchman" "${BIN_DIR}/synconf" "${BIN_DIR}/sync.bash"
   fi
 
   mkdir -p /usr/local/var/run/watchman
   chmod 2777 /usr/local/var/run/watchman
   ${BIN_DIR}/watchman -v >/dev/null || _exit 4 "Can not detect watchman version! Exit"
 
-  rm -f /usr/local/sbin/{watchman_bash.bash,watchman}
-  ln -s ${BIN_DIR}/watchman_bash.bash /usr/local/sbin/watchman_bash.bash
+  rm -f /usr/local/sbin/{synconf,watchman}
+  ln -s ${BIN_DIR}/synconf /usr/local/sbin/synconf
   ln -s ${BIN_DIR}/watchman /usr/local/sbin/watchman
 
   echo ""
