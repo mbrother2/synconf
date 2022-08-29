@@ -9,6 +9,7 @@ BIN_DIR="${SYNCONF_DIR}/bin"
 CONFIG_DIR="${SYNCONF_DIR}/conf"
 WATCH_FILE="${CONFIG_DIR}/watch.conf"
 CLUSTER_FILE="${CONFIG_DIR}/cluster.conf"
+NOTIFY_FILE="${CONFIG_DIR}/notify.conf"
 LOG_FILE="${SYNCONF_DIR}/log/synconf.log"
 BASH_DEFAULT="${BIN_DIR}/sync.bash"
 GET_FILE_OK="0"
@@ -63,30 +64,34 @@ _create_default_conf() {
     echo '{"cluster":[]}' >${CLUSTER_FILE}
   fi
 
+  if [[ ! -f "${NOTIFY_FILE}" ]] || [[ ! -s "${NOTIFY_FILE}" ]]; then
+    echo '{"notify":[]}' >${NOTIFY_FILE}
+  fi
+
   if [[ ! -f "${WATCH_FILE}" ]] || [[ ! -s "${WATCH_FILE}" ]]; then
     cat >${WATCH_FILE} <<EOF
-      {
-        "watch": [{
-          "dir":"${CONFIG_DIR}",
-          "run_bash":"${BASH_DEFAULT}",
-          "track_file":[
-            "watch.conf"
-          ],
-          "exclude_file":[],
-          "command":[],
-          "delete_file":"no"
-        },{
-          "dir":"${BIN_DIR}",
-          "run_bash":"${BASH_DEFAULT}",
-          "track_file":[
-            "synconf",
-            "sync.bash"
-          ],
-          "exclude_file":[],
-          "command":[],
-          "delete_file":"no"
-        }]
-      }
+{
+  "watch": [{
+    "dir":"${CONFIG_DIR}",
+    "run_bash":"${BASH_DEFAULT}",
+    "track_file":[
+      "watch.conf"
+    ],
+    "exclude_file":[],
+    "command":[],
+    "delete_file":"no"
+  },{
+    "dir":"${BIN_DIR}",
+    "run_bash":"${BASH_DEFAULT}",
+    "track_file":[
+      "synconf",
+      "sync.bash"
+    ],
+    "exclude_file":[],
+    "command":[],
+    "delete_file":"no"
+  }]
+}
 EOF
   fi
 }
@@ -118,6 +123,10 @@ _check_os(){
 _get_input() {
   if [[ "${COMMAND}" != "install" ]] && [[ ! -f "${BIN_DIR}/watchman" ]]; then
     _exit 4 "watchman is not installed, exit."
+  fi
+
+  if [[ -n "${SENDER}" ]] && [[ -z "${RECEIVER}" ]]; then
+    RECEIVER=${SENDER}
   fi
 
   for i in curl jq unzip rsync; do
@@ -474,6 +483,31 @@ EOF
   fi
 }
 
+_notify_add(){
+  if [ -n "$3" ]; then
+    NEW_WATCH=$(jq "(.notify[] | select(.type == \"$1\") | .$2) |= \"$3\"" ${NOTIFY_FILE})
+    echo "${NEW_WATCH}" >${NOTIFY_FILE}
+  fi
+}
+
+_notify(){
+  if [ "${REMOVE}" == "yes" ]; then
+    NEW_WATCH=$(jq "del(.notify[] | select(.type == \"${TYPE}\"))" ${NOTIFY_FILE})
+    echo "${NEW_WATCH}" >${NOTIFY_FILE}
+    exit 0
+  fi
+
+  if [ "${ALL_ARGS}" == "notify" ]; then
+    jq -r '.notify' ${NOTIFY_FILE} | jq
+    exit 0
+  fi
+
+  _notify_add "${TYPE}" "email" "${RECEIVER}"
+  _notify_add "${TYPE}" "smtp" "${SMTP}"
+  _notify_add "${TYPE}" "user" "${SENDER}"
+  _notify_add "${TYPE}" "password" "${PASSWORD}"
+}
+
 # Show help
 _show_help() {
   cat <<EOF
@@ -482,6 +516,7 @@ USAGE:
 
 COMMANDS:
      install    Install watchman
+     notify     Add/remove notify
      cluster    Add/remove server to cluster
      watch      Add/remove watch directory
      uninstall  Remove watchman
@@ -515,6 +550,17 @@ OPTIONS:
                                   1.1.1.1:2083,8.8.8.8:2087
      -x, --exit                   Do not config on other servers in cluster
 
+    For notify:
+     -e, --email [EMAIL]          Email account to receive notification. Example:
+                                  thanhlv@gmail.com
+     -p, --password [STRING]      Email password
+     -s, --smtp [HOST:PORT]       SMTP host for email. Example:
+                                  smtp.gmail.com:587
+                                  1.1.1.1:25
+     -t, --type [STRING]          Notify type
+     -u, --user [EMAIL]           Email account to send email. Example:
+                                  thanhlv@gmail.com
+
     Show help:
      -h, --help                   Show help
 
@@ -542,7 +588,7 @@ else
     _show_help
     exit 0
     ;;
-  install | cluster | watch | uninstall)
+  install | notify | cluster | watch | uninstall)
     COMMAND=$1
     ;;
   *)
@@ -578,11 +624,12 @@ while (("$#")); do
       shift 2
     fi
     ;;
-  -e | --exclude)
+  -e | --exclude | --email)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       EXCLUDE="$2"
+      RECEIVER="$2"
       shift 2
     fi
     ;;
@@ -590,23 +637,41 @@ while (("$#")); do
     GET_FILE="yes"
     shift
     ;;
+  -p | --password)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1. Exit"
+    else
+      PASSWORD="$2"
+      shift 2
+    fi
+    ;;
   -r | --remove)
     REMOVE="yes"
     shift
     ;;
-  -s | --server)
+  -s | --server | --smtp)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       SERVER="$2"
+      SMTP="$2"
       shift 2
     fi
     ;;
-  -t | --track)
+  -t | --track | --type)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       TRACK="$2"
+      TYPE="$2"
+      shift 2
+    fi
+    ;;
+  -u | --user)
+    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+      _exit 22 "Missing argument for option $1. Exit"
+    else
+      SENDER="$2"
       shift 2
     fi
     ;;
