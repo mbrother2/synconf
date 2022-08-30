@@ -50,12 +50,12 @@ _watch_list() {
 }
 
 _send_email(){
-  CHECK_EMAIL=$(jq '[.notify[] | select(.type == "email")][0]' ${NOTIFY_FILE})
-  if [ -n "${CHECK_EMAIL}" ]; then
-    RECEIVER=$(echo "${CHECK_EMAIL}" | jq -r '.email')
-    SMTP=$(echo "${CHECK_EMAIL}" | jq -r '.smtp')
-    SENDER=$(echo "${CHECK_EMAIL}" | jq -r '.user')
-    PASSWORD=$(echo "${CHECK_EMAIL}" | jq -r '.password')
+  CHECK_INFO=$(jq '[.notify[] | select(.kind == "email")][0] | .info' ${NOTIFY_FILE})
+  if [[ -n "${CHECK_INFO}" ]] && [[ "${CHECK_INFO}" != "null" ]]; then
+    RECEIVER=$(echo "${CHECK_INFO}" | jq -r '.receiver')
+    SMTP=$(echo "${CHECK_INFO}" | jq -r '.smtp')
+    SENDER=$(echo "${CHECK_INFO}" | jq -r '.sender')
+    PASSWORD=$(echo "${CHECK_INFO}" | jq -r '.password')
 
     if [[ -z "${RECEIVER}${SMTP}${SENDER}${PASSWORD}" ]]; then
       SEND_EMAIL="You must config email to send notification"
@@ -63,7 +63,7 @@ _send_email(){
       SEND_EMAIL=$(curl --max-time 3 --url "smtp://${SMTP}" --ssl \
         --mail-from "${SENDER}" --mail-rcpt "${RECEIVER}" \
         --user "${SENDER}:${PASSWORD}" \
-        -T <(echo -e "From: ${SENDER}\nTo: ${RECEIVER}\nSubject: [synconf]$1\n\n $2")
+        -T <(echo -e "From: ${SENDER}\nTo: ${RECEIVER}\nSubject: [syncconf]$1\n\n $2")
       )
 
       if [ -z "${SEND_EMAIL}" ]; then
@@ -75,6 +75,10 @@ _send_email(){
     echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"data\":${SEND_EMAIL},\"success\":\"${EMAIL_SUCCESS}\"}" | \
       jq -c >>${NOTIFY_LOG}
   fi
+}
+
+_send_notify(){
+  _send_email "$1" "$2"
 }
 
 # Sync file to cluster
@@ -107,7 +111,7 @@ _sync_file() {
           rm -f ${FILE_LOCK}."${MD5SUM_FILE}"
         else
           echo "${SINGLE_FILE} - Lock file exist!" >>${DEBUG_FILE}
-          _send_email "Notify for ${SINGLE_SERVER}" "${SINGLE_FILE} - Lock file exist!"
+          _send_notify "Notify for ${SINGLE_SERVER}" "${SINGLE_FILE} - Lock file exist!"
           WRITE_LOG=0
           continue
         fi
@@ -116,7 +120,7 @@ _sync_file() {
       ssh -o ConnectTimeout=${SSH_TIMEOUT} -p "${SSH_PORT}" -q root@"${IP_ADDRESS}" exit || {
         MESSAGE="SSH error"
         SUCCESS="false"
-        _send_email "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
+        _send_notify "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
         continue
       }
       echo "${TIME_LOCK}" >${FILE_LOCK}."${MD5SUM_FILE}"
@@ -230,7 +234,7 @@ _get_file() {
       ssh -o ConnectTimeout=${SSH_TIMEOUT} -p "${SSH_PORT}" -q root@"${IP_ADDRESS}" exit || {
         MESSAGE="SSH error"
         SUCCESS="false"
-        _send_email "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
+        _send_notify "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
         continue
       }
 
@@ -286,14 +290,14 @@ _get_info() {
 
   if [ ! -f ${WATCH_FILE} ]; then
     ACTION="NOWATCH"
-    _send_email "Notify for ${ACTION}" "File ${WATCH_FILE} does not exist"
+    _send_notify "Notify for ${ACTION}" "File ${WATCH_FILE} does not exist"
     _write_log
     exit 1
   else
     LIST_SERVER=$(jq -c '.cluster[]' <${CLUSTER_FILE})
     if [ -z "${LIST_SERVER}" ]; then
       ACTION="NOCLUSTER"
-      _send_email "Notify for ${ACTION}" "Cluster does not exist"
+      _send_notify "Notify for ${ACTION}" "Cluster does not exist"
       _write_log
       exit 1
     else

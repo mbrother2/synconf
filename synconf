@@ -553,8 +553,8 @@ OPTIONS:
 
     For notify:
      -i, --info [JSON]            Information to connect to notify system. Example:
-                                  Email: {"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587",
-                                  "email":"thanhlv@hostvn.com","password":"xxxxxx"}
+                                  Email: '{"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587",
+                                  "sender":"thanhlv@gmail.com","password":"xxx"}'
      -k, --kind [STRING]          Notify kind
 
     Show help:
@@ -564,11 +564,11 @@ EXAMPLES:
    bash $0 install
    bash $0 install -v v2021.12.13.00
    bash $0 watch --dir /etc/nginx/conf.d --track thanhlv.com.conf
-   bash $0 watch -d /etc/nginx/conf.d -t thanhlv.com.conf -b /usr/local/sbin/run_sync.bash
+   bash $0 watch -d /etc/nginx/conf.d -t thanhlv.com.conf -b /usr/local/synconf/bin/sync.bash
    bash $0 watch --dir /etc/nginx/conf.d --exclude thanhlv.com.conf,thanhlv.net.conf
    bash $0 cluster -s 1.1.1.1:2083,8.8.8.8:2087
    bash $0 cluster
-   bash $0 notify -k email -i {"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587","email":"thanhlv@hostvn.com","password":"xxxxxx"}
+   bash $0 notify -k email -i '{"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587","email":"thanhlv@gmail.com","password":"xxx"}'
    bash $0 uninstall
 EOF
 }
