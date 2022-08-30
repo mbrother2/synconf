@@ -568,7 +568,7 @@ EXAMPLES:
    bash $0 watch --dir /etc/nginx/conf.d --exclude thanhlv.com.conf,thanhlv.net.conf
    bash $0 cluster -s 1.1.1.1:2083,8.8.8.8:2087
    bash $0 cluster
-   bash $0 notify -k email -i '{"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587","email":"thanhlv@gmail.com","password":"xxx"}'
+   bash $0 notify -k email -i '{"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587","sender":"thanhlv@gmail.com","password":"xxx"}'
    bash $0 uninstall
 EOF
 }

@@ -71,10 +71,12 @@ _send_email(){
         SEND_EMAIL="Send email successfully"
       fi
     fi
-
-    echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"data\":${SEND_EMAIL},\"success\":\"${EMAIL_SUCCESS}\"}" | \
-      jq -c >>${NOTIFY_LOG}
+  else
+    SEND_EMAIL="You must config email to send notification"
   fi
+
+  echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"data\":${SEND_EMAIL},\"success\":\"${EMAIL_SUCCESS}\"}" | \
+    jq -c >>${NOTIFY_LOG}
 }
 
 _send_notify(){
