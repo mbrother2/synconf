@@ -75,7 +75,7 @@ _send_email(){
     SEND_EMAIL="You must config email to send notification"
   fi
 
-  echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"message:\"${SEND_EMAIL}\",\"success\":\"${EMAIL_SUCCESS}\"}" | \
+  echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"message\":\"${SEND_EMAIL}\",\"success\":\"${EMAIL_SUCCESS}\"}" | \
     jq -c >>${NOTIFY_LOG}
 }
 
