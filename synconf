@@ -483,17 +483,10 @@ EOF
   fi
 }
 
-_notify_add(){
-  if [ -n "$3" ]; then
-    NEW_WATCH=$(jq "(.notify[] | select(.type == \"$1\") | .$2) |= \"$3\"" ${NOTIFY_FILE})
-    echo "${NEW_WATCH}" >${NOTIFY_FILE}
-  fi
-}
-
 _notify(){
   if [ "${REMOVE}" == "yes" ]; then
-    NEW_WATCH=$(jq "del(.notify[] | select(.type == \"${TYPE}\"))" ${NOTIFY_FILE})
-    echo "${NEW_WATCH}" >${NOTIFY_FILE}
+    NEW_NOTIFY=$(jq "del(.notify[] | select(.type == \"${KIND}\"))" ${NOTIFY_FILE})
+    echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
     exit 0
   fi
 
@@ -502,10 +495,18 @@ _notify(){
     exit 0
   fi
 
-  _notify_add "${TYPE}" "email" "${RECEIVER}"
-  _notify_add "${TYPE}" "smtp" "${SMTP}"
-  _notify_add "${TYPE}" "user" "${SENDER}"
-  _notify_add "${TYPE}" "password" "${PASSWORD}"
+  CHECK_NOTIFY_CONF=$(jq -r ".notify[] | select(.type == \"${KIND}\")" ${NOTIFY_FILE})
+  if [ -z "${CHECK_NOTIFY_CONF}" ]; then
+    NEW_NOTIFY=$(jq ".notify += [{
+      \"kind\":\"${KIND}\",
+      \"info\":\"\"
+      }]" ${NOTIFY_FILE}
+    )
+    echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
+  fi
+
+  NEW_NOTIFY=$(jq "(.notify[] | select(.type == \"${KIND}\") | .info) |= \"${INFO}\"" ${NOTIFY_FILE})
+  echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
 }
 
 # Show help
@@ -551,15 +552,10 @@ OPTIONS:
      -x, --exit                   Do not config on other servers in cluster
 
     For notify:
-     -e, --email [EMAIL]          Email account to receive notification. Example:
-                                  thanhlv@gmail.com
-     -p, --password [STRING]      Email password
-     -s, --smtp [HOST:PORT]       SMTP host for email. Example:
-                                  smtp.gmail.com:587
-                                  1.1.1.1:25
-     -t, --type [STRING]          Notify type
-     -u, --user [EMAIL]           Email account to send email. Example:
-                                  thanhlv@gmail.com
+     -i, --info [JSON]            Information to connect to notify system. Example:
+                                  Email: {"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587",
+                                  "email":"thanhlv@hostvn.com","password":"xxxxxx"}
+     -k, --kind [STRING]          Notify kind
 
     Show help:
      -h, --help                   Show help
@@ -572,6 +568,7 @@ EXAMPLES:
    bash $0 watch --dir /etc/nginx/conf.d --exclude thanhlv.com.conf,thanhlv.net.conf
    bash $0 cluster -s 1.1.1.1:2083,8.8.8.8:2087
    bash $0 cluster
+   bash $0 notify -k email -i {"receiver":"thanhlv@gmail.com","smtp":"smtp.gmail.com:587","email":"thanhlv@hostvn.com","password":"xxxxxx"}
    bash $0 uninstall
 EOF
 }
@@ -624,12 +621,11 @@ while (("$#")); do
       shift 2
     fi
     ;;
-  -e | --exclude | --email)
+  -e | --exclude)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       EXCLUDE="$2"
-      RECEIVER="$2"
       shift 2
     fi
     ;;
@@ -637,41 +633,39 @@ while (("$#")); do
     GET_FILE="yes"
     shift
     ;;
-  -p | --password)
-    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1. Exit"
-    else
-      PASSWORD="$2"
-      shift 2
-    fi
-    ;;
+  -i | --info)
+  if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+    _exit 22 "Missing argument for option $1. Exit"
+  else
+    INFO="$2"
+    shift 2
+  fi
+  ;;
+  -k | --kind)
+  if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
+    _exit 22 "Missing argument for option $1. Exit"
+  else
+    KIND="$2"
+    shift 2
+  fi
+  ;;
   -r | --remove)
     REMOVE="yes"
     shift
     ;;
-  -s | --server | --smtp)
+  -s | --server)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       SERVER="$2"
-      SMTP="$2"
       shift 2
     fi
     ;;
-  -t | --track | --type)
+  -t | --track)
     if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
       _exit 22 "Missing argument for option $1. Exit"
     else
       TRACK="$2"
-      TYPE="$2"
-      shift 2
-    fi
-    ;;
-  -u | --user)
-    if [[ -z "$2" ]] || [[ "${2:0:1}" == "-" ]]; then
-      _exit 22 "Missing argument for option $1. Exit"
-    else
-      SENDER="$2"
       shift 2
     fi
     ;;
@@ -697,6 +691,7 @@ _check_os
 _get_input
 case ${COMMAND} in
 install) _install ;;
+notify) _notify ;;
 watch) _watch ;;
 cluster) _cluster ;;
 uninstall) _uninstall ;;
