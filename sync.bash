@@ -63,19 +63,19 @@ _send_email(){
       SEND_EMAIL=$(curl --max-time 3 --url "smtp://${SMTP}" --ssl \
         --mail-from "${SENDER}" --mail-rcpt "${RECEIVER}" \
         --user "${SENDER}:${PASSWORD}" \
-        -T <(echo -e "From: ${SENDER}\nTo: ${RECEIVER}\nSubject: [syncconf]$1\n\n $2")
+        -T <(echo -e "From: ${SENDER}\nTo: ${RECEIVER}\nSubject: [syncconf] $1\n\n $2")
       )
 
       if [ -z "${SEND_EMAIL}" ]; then
         EMAIL_SUCCESS="true"
-        SEND_EMAIL="Send email successfully"
+        SEND_EMAIL="$1"
       fi
     fi
   else
     SEND_EMAIL="You must config email to send notification"
   fi
 
-  echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"data\":\"${SEND_EMAIL}\",\"success\":\"${EMAIL_SUCCESS}\"}" | \
+  echo "{\"time\":\"$(date +"%d-%m-%Y %T")\",\"message:\"${SEND_EMAIL}\",\"success\":\"${EMAIL_SUCCESS}\"}" | \
     jq -c >>${NOTIFY_LOG}
 }
 
