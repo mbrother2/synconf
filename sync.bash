@@ -60,7 +60,7 @@ _send_email(){
     if [[ -z "${RECEIVER}${SMTP}${SENDER}${PASSWORD}" ]]; then
       SEND_EMAIL="You must config email to send notification"
     else
-      SEND_EMAIL=$(curl --max-time 3 --url "smtp://${SMTP}" --ssl \
+      SEND_EMAIL=$(curl -sS --max-time 3 --url "smtp://${SMTP}" --ssl \
         --mail-from "${SENDER}" --mail-rcpt "${RECEIVER}" \
         --user "${SENDER}:${PASSWORD}" \
         -T <(echo -e "From: ${SENDER}\nTo: ${RECEIVER}\nSubject: [syncconf] $1\n\n $2")
