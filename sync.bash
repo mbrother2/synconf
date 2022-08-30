@@ -113,7 +113,7 @@ _sync_file() {
           rm -f ${FILE_LOCK}."${MD5SUM_FILE}"
         else
           echo "${SINGLE_FILE} - Lock file exist!" >>${DEBUG_FILE}
-          _send_notify "Notify for ${SINGLE_SERVER}" "${SINGLE_FILE} - Lock file exist!"
+          _send_notify "Notify for ${IP_ADDRESS}" "${SINGLE_FILE} - Lock file exist!"
           WRITE_LOG=0
           continue
         fi
@@ -122,7 +122,7 @@ _sync_file() {
       ssh -o ConnectTimeout=${SSH_TIMEOUT} -p "${SSH_PORT}" -q root@"${IP_ADDRESS}" exit || {
         MESSAGE="SSH error"
         SUCCESS="false"
-        _send_notify "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
+        _send_notify "Notify for ${IP_ADDRESS}" "${MESSAGE}"
         continue
       }
       echo "${TIME_LOCK}" >${FILE_LOCK}."${MD5SUM_FILE}"
@@ -236,7 +236,7 @@ _get_file() {
       ssh -o ConnectTimeout=${SSH_TIMEOUT} -p "${SSH_PORT}" -q root@"${IP_ADDRESS}" exit || {
         MESSAGE="SSH error"
         SUCCESS="false"
-        _send_notify "Notify for ${SINGLE_SERVER}" "${MESSAGE}"
+        _send_notify "Notify for ${IP_ADDRESS}" "${MESSAGE}"
         continue
       }
 
