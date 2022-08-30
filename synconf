@@ -485,7 +485,7 @@ EOF
 
 _notify(){
   if [ "${REMOVE}" == "yes" ]; then
-    NEW_NOTIFY=$(jq "del(.notify[] | select(.type == \"${KIND}\"))" ${NOTIFY_FILE})
+    NEW_NOTIFY=$(jq "del(.notify[] | select(.kind == \"${KIND}\"))" ${NOTIFY_FILE})
     echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
     exit 0
   fi
@@ -495,7 +495,7 @@ _notify(){
     exit 0
   fi
 
-  CHECK_NOTIFY_CONF=$(jq -r ".notify[] | select(.type == \"${KIND}\")" ${NOTIFY_FILE})
+  CHECK_NOTIFY_CONF=$(jq -r ".notify[] | select(.kind == \"${KIND}\")" ${NOTIFY_FILE})
   if [ -z "${CHECK_NOTIFY_CONF}" ]; then
     NEW_NOTIFY=$(jq ".notify += [{
       \"kind\":\"${KIND}\",
@@ -505,7 +505,7 @@ _notify(){
     echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
   fi
 
-  NEW_NOTIFY=$(jq "(.notify[] | select(.type == \"${KIND}\") | .info) |= \"${INFO}\"" ${NOTIFY_FILE})
+  NEW_NOTIFY=$(jq "(.notify[] | select(.kind == \"${KIND}\") | .info) |= ${INFO}" ${NOTIFY_FILE})
   echo "${NEW_NOTIFY}" >${NOTIFY_FILE}
 }
 
